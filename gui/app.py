@@ -63,6 +63,9 @@ class StarGameApp:
         self.board_outer: Optional[tk.Frame] = None
         self.log_widget: Optional[tk.Text] = None
 
+        # Coordinate labels so we can re-theme them
+        self.coord_labels: list[tk.Label] = []
+
         # Theme
         self.theme_name = tk.StringVar(value=DEFAULT_THEME_NAME)
         self.theme = THEMES[self.theme_name.get()]
@@ -78,7 +81,7 @@ class StarGameApp:
     def create_widgets(self) -> None:
         self.root.configure(bg=self.theme["bg"])
 
-        # Main root layout: sidebar (left) + board (right)
+        # Main layout: sidebar (left) + board (right)
         root_frame = tk.Frame(self.root, bg=self.theme["bg"])
         root_frame.pack(fill="both", expand=True)
 
@@ -266,21 +269,29 @@ class StarGameApp:
 
         # Column headers
         for c in range(SIZE):
-            tk.Label(
+            lbl = tk.Label(
                 grid,
                 text=str(c + 1),
                 font=("Consolas", 12, "bold"),
-            ).grid(row=0, column=c + 1, padx=1, pady=1)
+                fg=self.theme["header_text"],
+                bg=self.theme["bg"],
+            )
+            lbl.grid(row=0, column=c + 1, padx=1, pady=1)
+            self.coord_labels.append(lbl)
 
         # Row headers
         for r in range(SIZE):
-            tk.Label(
+            lbl = tk.Label(
                 grid,
                 text=chr(ord("A") + r),
                 font=("Consolas", 12, "bold"),
-            ).grid(row=r + 1, column=0, padx=1, pady=1)
+                fg=self.theme["header_text"],
+                bg=self.theme["bg"],
+            )
+            lbl.grid(row=r + 1, column=0, padx=1, pady=1)
+            self.coord_labels.append(lbl)
 
-        # Buttons (fixed-ish square feel)
+        # Buttons
         self.buttons = []
         for r in range(SIZE):
             row_buttons = []
@@ -295,12 +306,10 @@ class StarGameApp:
                 )
                 btn.grid(row=r + 1, column=c + 1, padx=2, pady=2)
 
-                # Hover effects
                 btn.bind("<Enter>", self.on_cell_enter)
                 btn.bind("<Leave>", self.on_cell_leave)
 
                 btn._base_bg = self.theme["empty_cell"]  # type: ignore[attr-defined]
-
                 row_buttons.append(btn)
             self.buttons.append(row_buttons)
 
@@ -321,29 +330,41 @@ class StarGameApp:
             self.board_outer.config(bg=self.theme["bg"])
 
         if self.label_scores:
-            self.label_scores.config(
-                fg=self.theme["text"], bg=self.theme["panel_bg"]
-            )
+            self.label_scores.config(fg=self.theme["text"], bg=self.theme["panel_bg"])
         if self.label_turn:
             self.label_turn.config(bg=self.theme["panel_bg"])
         if self.label_legal:
-            self.label_legal.config(
-                fg=self.theme["zero_text"], bg=self.theme["panel_bg"]
-            )
+            self.label_legal.config(fg=self.theme["zero_text"], bg=self.theme["panel_bg"])
         if self.label_bot_move:
-            self.label_bot_move.config(
-                fg=self.theme["bot_move_text"], bg=self.theme["panel_bg"]
-            )
+            self.label_bot_move.config(fg=self.theme["bot_move_text"], bg=self.theme["panel_bg"])
         if self.log_widget:
-            self.log_widget.config(
-                bg=self.theme["log_bg"],
-                fg=self.theme["log_text"],
-            )
+            self.log_widget.config(bg=self.theme["log_bg"], fg=self.theme["log_text"])
         if self.instructions_frame:
-            self.instructions_frame.config(
-                bg=self.theme["panel_bg"],
-                highlightbackground=self.theme["text"],
-            )
+            self.instructions_frame.config(bg=self.theme["panel_bg"], highlightbackground=self.theme["text"])
+
+        # Re-theme coordinate headers
+        for lbl in self.coord_labels:
+            lbl.config(fg=self.theme["header_text"], bg=self.theme["bg"])
+
+    # ====================================================================
+    # LOG HELPERS
+    # ====================================================================
+
+    def clear_log(self) -> None:
+        """Clear the event log (used when starting a new game)."""
+        if not self.log_widget:
+            return
+        self.log_widget.config(state="normal")
+        self.log_widget.delete("1.0", "end")
+        self.log_widget.config(state="disabled")
+
+    def log(self, msg: str) -> None:
+        if not self.log_widget:
+            return
+        self.log_widget.config(state="normal")
+        self.log_widget.insert("end", msg + "\n")
+        self.log_widget.see("end")
+        self.log_widget.config(state="disabled")
 
     # ====================================================================
     # COLOR UTILS
@@ -353,29 +374,24 @@ class StarGameApp:
         """
         Return a lighter version of a hex color.
 
-        We treat HIGHLIGHT_BRIGHTNESS as a *percentage towards white*:
+        Treat HIGHLIGHT_BRIGHTNESS as percentage towards white:
         - 0  → no change
         - 30 → 30% closer to white
         - 100 → full white
-
-        This avoids the 'everything becomes pure white' effect you saw.
         """
-        # Use brightness from config if no custom factor is passed
         if factor is None:
             factor = HIGHLIGHT_BRIGHTNESS
 
-        # Interpret factor as percentage (0–100)
         strength = max(0.0, min(float(factor), 100.0)) / 100.0
 
         hex_color = hex_color.lstrip("#")
         if len(hex_color) != 6:
-            return "#" + hex_color  # fallback
+            return "#" + hex_color
 
         r = int(hex_color[0:2], 16)
         g = int(hex_color[2:4], 16)
         b = int(hex_color[4:6], 16)
 
-        # Move each channel towards 255 (white) by "strength"
         r = int(r + (255 - r) * strength)
         g = int(g + (255 - g) * strength)
         b = int(b + (255 - b) * strength)
@@ -392,8 +408,9 @@ class StarGameApp:
         self._disable_mode_buttons()
         if self.btn_new_game:
             self.btn_new_game.config(state="normal")
-        self._start_new_state()
-        self.log("New game started: Player 2 is Greedy Bot.")
+
+        self._start_new_state(clear_log=True)
+        self.log("New game started: Greedy Bot is Player 2.")
         self._start_turn()
 
     def choose_mode_human(self) -> None:
@@ -402,7 +419,8 @@ class StarGameApp:
         self._disable_mode_buttons()
         if self.btn_new_game:
             self.btn_new_game.config(state="normal")
-        self._start_new_state()
+
+        self._start_new_state(clear_log=True)
         self.log("New game started: 2 human players.")
         self._start_turn()
 
@@ -413,20 +431,26 @@ class StarGameApp:
             self.btn_vs_human.config(state="disabled")
 
     def new_game(self) -> None:
-        """Start a new game with the same mode."""
         if not self.mode_selected:
             return
-        self._start_new_state()
+
+        self._start_new_state(clear_log=True)
+
         if self.bot_player == BOT_PLAYER_ID:
             self.log("New game (mode: vs Greedy Bot).")
         else:
             self.log("New game (mode: 2 Players).")
+
         self._start_turn()
 
-    def _start_new_state(self) -> None:
+    def _start_new_state(self, clear_log: bool = False) -> None:
         self.state = create_initial_state(self.config)
         self.animating = False
         self.last_bot_move = ""
+
+        if clear_log:
+            self.clear_log()
+
         if self.label_bot_move:
             self.label_bot_move.config(text="")
 
@@ -443,18 +467,6 @@ class StarGameApp:
             self.instructions_visible = False
 
     # ====================================================================
-    # EVENT LOG
-    # ====================================================================
-
-    def log(self, msg: str) -> None:
-        if not self.log_widget:
-            return
-        self.log_widget.config(state="normal")
-        self.log_widget.insert("end", msg + "\n")
-        self.log_widget.see("end")
-        self.log_widget.config(state="disabled")
-
-    # ====================================================================
     # HOVER EFFECTS
     # ====================================================================
 
@@ -469,31 +481,30 @@ class StarGameApp:
         btn.config(bg=base)
 
     # ====================================================================
-    # DRAW BOARD & TURN LABELS
+    # DRAW
     # ====================================================================
 
     def draw(self) -> None:
         state = self.state
 
-        # Scores label
-        if state is None:
-            if self.label_scores:
-                self.label_scores.config(
-                    text="Scores → P1: 0 | P2: 0"
-                )
-        else:
-            if self.label_scores:
-                self.label_scores.config(
-                    text=f"Scores → P1: {state.scores[1]} | P2: {state.scores[2]}"
-                )
+        # Scores
+        if self.label_scores:
+            if state is None:
+                self.label_scores.config(text="Scores → P1: 0 | P2: 0")
+            else:
+                if self.bot_player == BOT_PLAYER_ID:
+                    self.label_scores.config(
+                        text=f"Scores → P1: {state.scores[1]} | Greedy Bot: {state.scores[2]}"
+                    )
+                else:
+                    self.label_scores.config(
+                        text=f"Scores → P1: {state.scores[1]} | P2: {state.scores[2]}"
+                    )
 
         # Turn / winner
         if state is None or not self.mode_selected:
             if self.label_turn:
-                self.label_turn.config(
-                    text="Choose a mode to begin.",
-                    fg=self.theme["star"],
-                )
+                self.label_turn.config(text="Choose a mode to begin.", fg=self.theme["star"])
         else:
             if state.game_over:
                 if state.winner is None:
@@ -504,29 +515,20 @@ class StarGameApp:
             else:
                 mode_text = "COLUMN" if state.current_player == 1 else "ROW"
                 color = "#00E0FF" if state.current_player == 1 else "#FF80FF"
-                self.label_turn.config(
-                    text=f"Player {state.current_player} → {mode_text} move",
-                    fg=color,
-                )
+                self.label_turn.config(text=f"Player {state.current_player} → {mode_text} move", fg=color)
 
-        # Legal / status text
+        # Legal/status
         if not self.mode_selected:
             self.label_legal.config(text="Choose a mode to begin.")
-        elif state is None:
-            self.label_legal.config(text="")
-        elif state.game_over:
+        elif state is None or state.game_over:
             self.label_legal.config(text="")
         else:
             if state.current_player == 1:
-                self.label_legal.config(
-                    text=f"Pick from COLUMN {state.star_c + 1}."
-                )
+                self.label_legal.config(text=f"Pick from COLUMN {state.star_c + 1}.")
             else:
-                self.label_legal.config(
-                    text=f"Pick from ROW {state.star_r + 1}."
-                )
+                self.label_legal.config(text=f"Pick from ROW {state.star_r + 1}.")
 
-        # Bot move label
+        # Bot move line
         if self.bot_player == BOT_PLAYER_ID and state is not None:
             if self.last_bot_move:
                 self.label_bot_move.config(text=self.last_bot_move)
@@ -535,7 +537,7 @@ class StarGameApp:
         else:
             self.label_bot_move.config(text="")
 
-        # Is it human's turn?
+        # Human turn?
         human_turn = (
             self.mode_selected
             and state is not None
@@ -544,56 +546,43 @@ class StarGameApp:
             and state.current_player != self.bot_player
         )
 
-        # Draw board grid
+        # If no state yet: blank board
         if state is None:
-            # Just clear everything to empty-cell color
             for r in range(SIZE):
                 for c in range(SIZE):
                     btn = self.buttons[r][c]
                     bg = self.theme["empty_cell"]
                     btn._base_bg = bg  # type: ignore[attr-defined]
-                    btn.config(text="", bg=bg, activebackground=bg, state="disabled")
+                    btn.config(text="", bg=bg, activebackground=bg, state="disabled", image="")
             return
 
+        # Draw board
         for r in range(SIZE):
             for c in range(SIZE):
                 btn = self.buttons[r][c]
                 val = state.board[r][c]
 
-                # Base background: star vs regular
+                # Base background
                 if (r, c) == (state.star_r, state.star_c):
                     bg = self.theme["star_cell"]
                 else:
                     bg = self.theme["empty_cell"]
 
-                # Subtle (or not so subtle) highlight of the available row/column
+                # Highlight active row/column
                 if (r, c) != (state.star_r, state.star_c) and not state.game_over:
                     if state.current_player == 1 and c == state.star_c:
-                        # Player 1 turn: column highlight
                         bg = self._lighter(bg)
                     elif state.current_player == 2 and r == state.star_r:
-                        # Player 2 turn: row highlight
                         bg = self._lighter(bg)
 
-                # Store base bg for hover
                 btn._base_bg = bg  # type: ignore[attr-defined]
 
-                # Content & text color
+                # Content
                 if (r, c) == (state.star_r, state.star_c):
                     if self.star_image:
-                        btn.config(
-                            text="",
-                            image=self.star_image,
-                            bg=bg,
-                            activebackground=bg,
-                        )
+                        btn.config(text="", image=self.star_image, bg=bg, activebackground=bg)
                     else:
-                        btn.config(
-                            text="★",
-                            fg=self.theme["star"],
-                            bg=bg,
-                            activebackground=bg,
-                        )
+                        btn.config(text="★", fg=self.theme["star"], bg=bg, activebackground=bg, image="")
                 else:
                     if val is None:
                         btn.config(text="", bg=bg, activebackground=bg, image="")
@@ -604,39 +593,29 @@ class StarGameApp:
                             fg = self.theme["neg_text"]
                         else:
                             fg = self.theme["zero_text"]
-                        btn.config(
-                            text=str(val),
-                            fg=fg,
-                            bg=bg,
-                            activebackground=bg,
-                            image="",
-                        )
+                        btn.config(text=str(val), fg=fg, bg=bg, activebackground=bg, image="")
 
                 btn.config(relief="raised", bd=1)
                 btn.config(state="normal" if human_turn else "disabled")
 
     # ====================================================================
-    # TURN FLOW / START TURN
+    # TURN FLOW
     # ====================================================================
 
     def _start_turn(self) -> None:
-        """Called at the beginning of a turn (after state reset or animation)."""
         state = self.state
         if state is None:
             self.draw()
             return
 
-        # If game is already over, just draw
         if state.game_over:
             self.draw()
             return
 
-        # If it's bot's turn, trigger bot move after a short delay
         if self.bot_player is not None and state.current_player == self.bot_player:
             self.draw()
             self.root.after(250, self.bot_move)
         else:
-            # Human's turn
             self.draw()
 
     # ====================================================================
@@ -644,7 +623,6 @@ class StarGameApp:
     # ====================================================================
 
     def animate_star_flash(self, r: int, c: int, steps: int = 4) -> None:
-        """Simple pulse animation on the star cell."""
         state = self.state
         if state is None:
             self.animating = False
@@ -653,17 +631,13 @@ class StarGameApp:
 
         if steps <= 0:
             self.animating = False
-            # After animation completes, start next turn
             self._start_turn()
             return
 
         self.animating = True
         btn = self.buttons[r][c]
         current_bg = btn.cget("bg")
-        if current_bg == self.theme["star_cell"]:
-            new_bg = self.theme["star_flash"]
-        else:
-            new_bg = self.theme["star_cell"]
+        new_bg = self.theme["star_flash"] if current_bg == self.theme["star_cell"] else self.theme["star_cell"]
 
         btn.config(bg=new_bg, activebackground=new_bg)
         btn._base_bg = new_bg  # type: ignore[attr-defined]
@@ -681,13 +655,11 @@ class StarGameApp:
             return
 
         if self.bot_player is None or state.current_player != self.bot_player:
-            # Not actually bot's turn; just draw
             self.draw()
             return
 
         move = get_bot_move(state)
         if move is None:
-            # No legal moves: engine handles "stuck" logic
             handle_no_moves_if_needed(state)
             if state.game_over:
                 if state.winner is None:
@@ -695,19 +667,16 @@ class StarGameApp:
                 else:
                     self.log(f"Game over: Player {state.winner} wins.")
             self.draw()
-            # If game not over and next player is also bot (rare), could re-call
             return
 
         r, c, val = move
         row_letter = chr(ord("A") + r)
         col_num = c + 1
-        self.last_bot_move = f"Bot chose {val:+} at {row_letter}{col_num}"
-        self.log(f"P{state.current_player} (Bot) took {val:+} at {row_letter}{col_num}")
+        self.last_bot_move = f"Greedy Bot chose {val:+} at {row_letter}{col_num}"
+        self.log(f"Greedy Bot took {val:+} at {row_letter}{col_num}")
 
-        # Apply move via engine
         apply_move(state, r, c)
 
-        # Star position is now at (r, c)
         self.draw()
         self.animate_star_flash(state.star_r, state.star_c)
 
@@ -717,15 +686,9 @@ class StarGameApp:
 
     def on_cell_click(self, r: int, c: int) -> None:
         state = self.state
-        if (
-            state is None
-            or not self.mode_selected
-            or state.game_over
-            or self.animating
-        ):
+        if state is None or not self.mode_selected or state.game_over or self.animating:
             return
 
-        # If it's bot's turn, ignore clicks
         if self.bot_player is not None and state.current_player == self.bot_player:
             return
 
@@ -740,10 +703,9 @@ class StarGameApp:
         col_num = c + 1
         self.log(f"P{state.current_player} took {val:+} at {row_letter}{col_num}")
 
-        # Apply move
         apply_move(state, r, c)
 
-        # If there's a bot, clear last_bot_move until bot plays again
+        # Clear bot message until bot moves again
         if self.bot_player == BOT_PLAYER_ID:
             self.last_bot_move = ""
             self.label_bot_move.config(text="")
