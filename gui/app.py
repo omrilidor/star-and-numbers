@@ -36,58 +36,110 @@ class StarGameApp:
 
         # Game engine state
         self.config = GameConfig(size=SIZE)
-        self.state: Optional[GameState] = None  # created when mode is chosen
+        self.state: Optional[GameState] = None
 
         # Mode selection
-        self.bot_player: Optional[int] = None  # BOT_PLAYER_ID for vs-bot, None for 2 humans
+        self.bot_player: Optional[int] = None
         self.mode_selected: bool = False
 
         # Animation flag
         self.animating: bool = False
 
-        # Last bot move text
+        # Bot move text
         self.last_bot_move: str = ""
-
-        # GUI elements
-        self.buttons: list[list[tk.Button]] = []
-        self.instructions_visible: bool = False
-        self.instructions_frame: Optional[tk.Frame] = None
-        self.label_scores: Optional[tk.Label] = None
-        self.label_turn: Optional[tk.Label] = None
-        self.label_legal: Optional[tk.Label] = None
-        self.label_bot_move: Optional[tk.Label] = None
-        self.btn_new_game: Optional[tk.Button] = None
-        self.btn_vs_bot: Optional[tk.Button] = None
-        self.btn_vs_human: Optional[tk.Button] = None
-        self.sidebar: Optional[tk.Frame] = None
-        self.board_outer: Optional[tk.Frame] = None
-        self.log_widget: Optional[tk.Text] = None
-
-        # Coordinate labels so we can re-theme them
-        self.coord_labels: list[tk.Label] = []
 
         # Theme
         self.theme_name = tk.StringVar(value=DEFAULT_THEME_NAME)
         self.theme = THEMES[self.theme_name.get()]
+
+        # Widget references
+        self.root_frame: Optional[tk.Frame] = None
+        self.sidebar: Optional[tk.Frame] = None
+        self.board_outer: Optional[tk.Frame] = None
+        self.grid_frame: Optional[tk.Frame] = None
+
+        self.theme_menu: Optional[tk.OptionMenu] = None
+
+        self.instructions_frame: Optional[tk.Frame] = None
+        self.instructions_label: Optional[tk.Label] = None
+        self.instructions_visible: bool = False
+
+        self.label_scores: Optional[tk.Label] = None
+        self.label_turn: Optional[tk.Label] = None
+        self.label_legal: Optional[tk.Label] = None
+        self.label_bot_move: Optional[tk.Label] = None
+
+        self.btn_new_game: Optional[tk.Button] = None
+        self.btn_vs_bot: Optional[tk.Button] = None
+        self.btn_vs_human: Optional[tk.Button] = None
+
+        self.log_title_label: Optional[tk.Label] = None
+        self.log_widget: Optional[tk.Text] = None
+
+        # Board widgets
+        self.coord_labels: list[tk.Label] = []
+        self.buttons: list[list[tk.Button]] = []
 
         self.create_widgets()
         self.apply_theme()
         self.draw()
 
     # ====================================================================
-    # GUI CREATION
+    # THEME HELPERS
+    # ====================================================================
+
+    def _is_light_theme(self) -> bool:
+        return self.theme_name.get() == "Light"
+
+    def _try_set_bg(self, widget: tk.Widget, bg: str) -> None:
+        """
+        Set background for *any* widget that supports it. (Frames, Labels, Buttons,
+        OptionMenus, etc.). This is the key fix for the remaining dark patches.
+        """
+        try:
+            widget.configure(bg=bg)
+        except Exception:
+            # Some widgets don't support bg; ignore safely.
+            pass
+
+    def _try_set_fg(self, widget: tk.Widget, fg: str) -> None:
+        """Set foreground color if supported (Labels, Buttons, etc.)."""
+        try:
+            widget.configure(fg=fg)
+        except Exception:
+            pass
+
+    def _set_colors_recursive(self, widget: tk.Widget, bg: str, fg: Optional[str] = None) -> None:
+        """
+        Recursively apply background (and optional foreground) to all descendants.
+        This eliminates leftover Dark-theme frames/labels/buttons that otherwise
+        keep their old color and show as "black patches".
+        """
+        self._try_set_bg(widget, bg)
+        if fg is not None:
+            self._try_set_fg(widget, fg)
+
+        for child in widget.winfo_children():
+            self._set_colors_recursive(child, bg, fg)
+
+    # ====================================================================
+    # UI BUILD
     # ====================================================================
 
     def create_widgets(self) -> None:
         self.root.configure(bg=self.theme["bg"])
 
-        # Main layout: sidebar (left) + board (right)
-        root_frame = tk.Frame(self.root, bg=self.theme["bg"])
-        root_frame.pack(fill="both", expand=True)
+        # Main frame
+        self.root_frame = tk.Frame(self.root, bg=self.theme["bg"])
+        self.root_frame.pack(fill="both", expand=True)
 
-        # ----- SIDEBAR -----
-        self.sidebar = tk.Frame(root_frame, bg=self.theme["panel_bg"])
+        # Sidebar
+        self.sidebar = tk.Frame(self.root_frame, bg=self.theme["panel_bg"])
         self.sidebar.pack(side="left", fill="y", padx=10, pady=10)
+
+        # Board outer
+        self.board_outer = tk.Frame(self.root_frame, bg=self.theme["bg"])
+        self.board_outer.pack(side="left", expand=True, padx=10, pady=10)
 
         # Title row
         title_row = tk.Frame(self.sidebar, bg=self.theme["panel_bg"])
@@ -108,9 +160,10 @@ class StarGameApp:
             command=self.toggle_instructions,
         ).pack(side="left")
 
-        # Theme selector
+        # Theme selector row
         theme_row = tk.Frame(self.sidebar, bg=self.theme["panel_bg"])
         theme_row.pack(anchor="w", pady=(6, 4))
+
         tk.Label(
             theme_row,
             text="Theme:",
@@ -119,14 +172,14 @@ class StarGameApp:
             bg=self.theme["panel_bg"],
         ).pack(side="left", padx=(0, 4))
 
-        theme_menu = tk.OptionMenu(
+        self.theme_menu = tk.OptionMenu(
             theme_row,
             self.theme_name,
             *THEMES.keys(),
             command=self.on_theme_change,
         )
-        theme_menu.config(font=("Consolas", 9))
-        theme_menu.pack(side="left")
+        self.theme_menu.config(font=("Consolas", 9))
+        self.theme_menu.pack(side="left")
 
         # Info labels
         tk.Label(
@@ -151,6 +204,7 @@ class StarGameApp:
             self.sidebar,
             text="",
             font=("Consolas", 11, "bold"),
+            fg=self.theme["text"],
             bg=self.theme["panel_bg"],
         )
         self.label_turn.pack(anchor="w", pady=2)
@@ -173,7 +227,7 @@ class StarGameApp:
         )
         self.label_bot_move.pack(anchor="w", pady=2)
 
-        # Mode selection + New Game
+        # Mode selection row
         mode_row = tk.Frame(self.sidebar, bg=self.theme["panel_bg"])
         mode_row.pack(anchor="w", pady=6)
 
@@ -210,46 +264,49 @@ class StarGameApp:
         )
         self.btn_new_game.pack(anchor="w", pady=(4, 8))
 
-        # Instructions panel (collapsed by default)
-        self.instructions_frame = tk.Frame(
-            self.sidebar, bg=self.theme["panel_bg"], bd=1, relief="groove"
-        )
+        # Instructions (collapsible)
+        self.instructions_frame = tk.Frame(self.sidebar, bg=self.theme["panel_bg"], bd=1, relief="groove")
         instructions_text = (
             "Game Instructions:\n"
             "• Board is 9×9 with integers -10 to 15.\n"
             "• Exactly one -10, one 10, and one 15 on the board.\n"
             "• Other values are random with mean 0, SD 4.\n"
-            "• The star (★) starts in the center.\n\n"
+            "• The star starts in the center.\n\n"
             "Turns:\n"
-            "• Player 1: choose from the COLUMN of the star.\n"
-            "• Player 2: choose from the ROW of the star.\n"
-            "• In vs-bot mode, Player 2 is a greedy bot.\n\n"
-            "Picking a number:\n"
+            "• Player 1: pick from the star’s COLUMN.\n"
+            "• Player 2: pick from the star’s ROW.\n"
+            "• Vs bot: Player 2 is a greedy bot.\n\n"
+            "Picking:\n"
             "• You gain that value.\n"
             "• The star moves to that square.\n"
             "• That square becomes empty.\n\n"
             "Game over:\n"
             "• A player with no moves is 'stuck'.\n"
-            "• When both players are stuck consecutively → game ends.\n"
-            "• Higher total score wins."
+            "• Two stuck turns in a row ends the game.\n"
+            "• Highest score wins."
         )
-        tk.Label(
+        self.instructions_label = tk.Label(
             self.instructions_frame,
             text=instructions_text,
             font=("Consolas", 9),
             justify="left",
-        ).pack(padx=8, pady=8)
+            bg=self.theme["panel_bg"],
+            fg=self.theme["text"],
+        )
+        self.instructions_label.pack(padx=8, pady=8)
 
         # Event log
         log_frame = tk.Frame(self.sidebar, bg=self.theme["panel_bg"])
         log_frame.pack(anchor="w", pady=8, fill="x")
 
-        tk.Label(
+        self.log_title_label = tk.Label(
             log_frame,
             text="Event log:",
             font=("Consolas", 10, "bold"),
             bg=self.theme["panel_bg"],
-        ).pack(anchor="w")
+            fg=self.theme["header_text"],
+        )
+        self.log_title_label.pack(anchor="w")
 
         self.log_widget = tk.Text(
             log_frame,
@@ -257,17 +314,17 @@ class StarGameApp:
             width=40,
             state="disabled",
             wrap="word",
+            bg=self.theme["log_bg"],
+            fg=self.theme["log_text"],
         )
         self.log_widget.pack(anchor="w", fill="x", pady=(2, 0))
 
-        # ----- BOARD AREA -----
-        self.board_outer = tk.Frame(root_frame, bg=self.theme["bg"])
-        self.board_outer.pack(side="left", expand=True, padx=10, pady=10)
+        # Board grid frame
+        self.grid_frame = tk.Frame(self.board_outer, bg=self.theme["bg"])
+        self.grid_frame.pack()
+        grid = self.grid_frame
 
-        grid = tk.Frame(self.board_outer, bg=self.theme["bg"])
-        grid.pack()
-
-        # Column headers
+        # Column headers (tile-like in Light)
         for c in range(SIZE):
             lbl = tk.Label(
                 grid,
@@ -275,11 +332,15 @@ class StarGameApp:
                 font=("Consolas", 12, "bold"),
                 fg=self.theme["header_text"],
                 bg=self.theme["bg"],
+                relief="raised",
+                bd=2,
+                padx=6,
+                pady=2,
             )
-            lbl.grid(row=0, column=c + 1, padx=1, pady=1)
+            lbl.grid(row=0, column=c + 1, padx=2, pady=2)
             self.coord_labels.append(lbl)
 
-        # Row headers
+        # Row headers (tile-like)
         for r in range(SIZE):
             lbl = tk.Label(
                 grid,
@@ -287,11 +348,15 @@ class StarGameApp:
                 font=("Consolas", 12, "bold"),
                 fg=self.theme["header_text"],
                 bg=self.theme["bg"],
+                relief="raised",
+                bd=2,
+                padx=6,
+                pady=2,
             )
-            lbl.grid(row=r + 1, column=0, padx=1, pady=1)
+            lbl.grid(row=r + 1, column=0, padx=2, pady=2)
             self.coord_labels.append(lbl)
 
-        # Buttons
+        # Tile buttons
         self.buttons = []
         for r in range(SIZE):
             row_buttons = []
@@ -303,6 +368,9 @@ class StarGameApp:
                     height=2,
                     font=("Consolas", 12),
                     command=lambda rr=r, cc=c: self.on_cell_click(rr, cc),
+                    relief="raised",
+                    bd=2,
+                    highlightthickness=1,
                 )
                 btn.grid(row=r + 1, column=c + 1, padx=2, pady=2)
 
@@ -314,7 +382,7 @@ class StarGameApp:
             self.buttons.append(row_buttons)
 
     # ====================================================================
-    # THEME HANDLING
+    # THEME
     # ====================================================================
 
     def on_theme_change(self, *_args) -> None:
@@ -323,35 +391,71 @@ class StarGameApp:
         self.draw()
 
     def apply_theme(self) -> None:
+        # Root bg
         self.root.configure(bg=self.theme["bg"])
+
+        # IMPORTANT: recolor all widgets that support bg (Frames/Labels/Buttons/etc.)
+        # This is what fixes the last remaining navy/black bars.
+        if self.root_frame:
+            self._set_colors_recursive(self.root_frame, self.theme["bg"])
         if self.sidebar:
-            self.sidebar.config(bg=self.theme["panel_bg"])
+            self._set_colors_recursive(self.sidebar, self.theme["panel_bg"], fg=self.theme["text"])
         if self.board_outer:
-            self.board_outer.config(bg=self.theme["bg"])
+            self._set_colors_recursive(self.board_outer, self.theme["bg"])
+
+        # Explicit important widgets
+        if self.log_widget:
+            self.log_widget.config(
+                bg=self.theme["log_bg"],
+                fg=self.theme["log_text"],
+                insertbackground=self.theme["log_text"],
+                selectbackground=self.theme.get("hover_bg", self.theme["log_bg"]),
+                selectforeground=self.theme["log_text"],
+            )
 
         if self.label_scores:
-            self.label_scores.config(fg=self.theme["text"], bg=self.theme["panel_bg"])
+            self.label_scores.config(bg=self.theme["panel_bg"], fg=self.theme["text"])
         if self.label_turn:
-            self.label_turn.config(bg=self.theme["panel_bg"])
+            self.label_turn.config(bg=self.theme["panel_bg"], fg=self.theme["text"])
         if self.label_legal:
-            self.label_legal.config(fg=self.theme["zero_text"], bg=self.theme["panel_bg"])
+            self.label_legal.config(bg=self.theme["panel_bg"], fg=self.theme["zero_text"])
         if self.label_bot_move:
-            self.label_bot_move.config(fg=self.theme["bot_move_text"], bg=self.theme["panel_bg"])
-        if self.log_widget:
-            self.log_widget.config(bg=self.theme["log_bg"], fg=self.theme["log_text"])
-        if self.instructions_frame:
-            self.instructions_frame.config(bg=self.theme["panel_bg"], highlightbackground=self.theme["text"])
+            self.label_bot_move.config(bg=self.theme["panel_bg"], fg=self.theme["bot_move_text"])
 
-        # Re-theme coordinate headers
+        if self.instructions_frame:
+            self.instructions_frame.config(bg=self.theme["panel_bg"])
+        if self.instructions_label:
+            self.instructions_label.config(bg=self.theme["panel_bg"], fg=self.theme["text"])
+
+        if self.log_title_label:
+            self.log_title_label.config(bg=self.theme["panel_bg"], fg=self.theme["header_text"])
+
+        # Coordinate headers + style switch
         for lbl in self.coord_labels:
-            lbl.config(fg=self.theme["header_text"], bg=self.theme["bg"])
+            lbl.config(bg=self.theme["bg"], fg=self.theme["header_text"])
+            if self._is_light_theme():
+                lbl.config(relief="raised", bd=2)
+            else:
+                lbl.config(relief="flat", bd=0)
+
+        # OptionMenu button + dropdown menu (Tk quirk)
+        if self.theme_menu:
+            self.theme_menu.config(
+                bg=self.theme["panel_bg"],
+                fg=self.theme["text"],
+                activebackground=self.theme["panel_bg"],
+            )
+            try:
+                menu = self.theme_menu["menu"]
+                menu.config(bg=self.theme["panel_bg"], fg=self.theme["text"])
+            except Exception:
+                pass
 
     # ====================================================================
-    # LOG HELPERS
+    # LOG
     # ====================================================================
 
     def clear_log(self) -> None:
-        """Clear the event log (used when starting a new game)."""
         if not self.log_widget:
             return
         self.log_widget.config(state="normal")
@@ -371,26 +475,18 @@ class StarGameApp:
     # ====================================================================
 
     def _lighter(self, hex_color: str, factor: Optional[float] = None) -> str:
-        """
-        Return a lighter version of a hex color.
-
-        Treat HIGHLIGHT_BRIGHTNESS as percentage towards white:
-        - 0  → no change
-        - 30 → 30% closer to white
-        - 100 → full white
-        """
+        """Treat HIGHLIGHT_BRIGHTNESS as % towards white."""
         if factor is None:
             factor = HIGHLIGHT_BRIGHTNESS
-
         strength = max(0.0, min(float(factor), 100.0)) / 100.0
 
-        hex_color = hex_color.lstrip("#")
-        if len(hex_color) != 6:
-            return "#" + hex_color
+        h = hex_color.lstrip("#")
+        if len(h) != 6:
+            return "#" + h
 
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
+        r = int(h[0:2], 16)
+        g = int(h[2:4], 16)
+        b = int(h[4:6], 16)
 
         r = int(r + (255 - r) * strength)
         g = int(g + (255 - g) * strength)
@@ -435,39 +531,37 @@ class StarGameApp:
             return
 
         self._start_new_state(clear_log=True)
-
         if self.bot_player == BOT_PLAYER_ID:
             self.log("New game (mode: vs Greedy Bot).")
         else:
             self.log("New game (mode: 2 Players).")
-
         self._start_turn()
 
     def _start_new_state(self, clear_log: bool = False) -> None:
         self.state = create_initial_state(self.config)
         self.animating = False
         self.last_bot_move = ""
-
         if clear_log:
             self.clear_log()
-
         if self.label_bot_move:
             self.label_bot_move.config(text="")
 
     # ====================================================================
-    # INSTRUCTIONS TOGGLE
+    # INSTRUCTIONS
     # ====================================================================
 
     def toggle_instructions(self) -> None:
         if not self.instructions_visible:
-            self.instructions_frame.pack(pady=5, fill="x")
+            if self.instructions_frame:
+                self.instructions_frame.pack(pady=5, fill="x")
             self.instructions_visible = True
         else:
-            self.instructions_frame.pack_forget()
+            if self.instructions_frame:
+                self.instructions_frame.pack_forget()
             self.instructions_visible = False
 
     # ====================================================================
-    # HOVER EFFECTS
+    # HOVER
     # ====================================================================
 
     def on_cell_enter(self, event) -> None:
@@ -487,7 +581,7 @@ class StarGameApp:
     def draw(self) -> None:
         state = self.state
 
-        # Scores
+        # Scores label
         if self.label_scores:
             if state is None:
                 self.label_scores.config(text="Scores → P1: 0 | P2: 0")
@@ -504,17 +598,20 @@ class StarGameApp:
         # Turn / winner
         if state is None or not self.mode_selected:
             if self.label_turn:
-                self.label_turn.config(text="Choose a mode to begin.", fg=self.theme["star"])
+                self.label_turn.config(text="Choose a mode to begin.", fg=self.theme["text"])
         else:
             if state.game_over:
                 if state.winner is None:
                     t = "Game over: tie! Click New Game to play again."
                 else:
                     t = f"Game over: Player {state.winner} wins! Click New Game to play again."
-                self.label_turn.config(text=t, fg=self.theme["star"])
+                self.label_turn.config(text=t, fg=self.theme["text"])
             else:
                 mode_text = "COLUMN" if state.current_player == 1 else "ROW"
-                color = "#00E0FF" if state.current_player == 1 else "#FF80FF"
+                if self._is_light_theme():
+                    color = self.theme.get("header_text", "#000000")
+                else:
+                    color = "#00E0FF" if state.current_player == 1 else "#FF80FF"
                 self.label_turn.config(text=f"Player {state.current_player} → {mode_text} move", fg=color)
 
         # Legal/status
@@ -546,7 +643,7 @@ class StarGameApp:
             and state.current_player != self.bot_player
         )
 
-        # If no state yet: blank board
+        # No state: blank board
         if state is None:
             for r in range(SIZE):
                 for c in range(SIZE):
@@ -595,11 +692,11 @@ class StarGameApp:
                             fg = self.theme["zero_text"]
                         btn.config(text=str(val), fg=fg, bg=bg, activebackground=bg, image="")
 
-                btn.config(relief="raised", bd=1)
+                # Enabled/disabled
                 btn.config(state="normal" if human_turn else "disabled")
 
     # ====================================================================
-    # TURN FLOW
+    # BOT / HUMAN MOVES
     # ====================================================================
 
     def _start_turn(self) -> None:
@@ -617,6 +714,64 @@ class StarGameApp:
             self.root.after(250, self.bot_move)
         else:
             self.draw()
+
+    def bot_move(self) -> None:
+        state = self.state
+        if state is None or state.game_over:
+            self.draw()
+            return
+
+        if self.bot_player is None or state.current_player != self.bot_player:
+            self.draw()
+            return
+
+        move = get_bot_move(state)
+        if move is None:
+            handle_no_moves_if_needed(state)
+            if state.game_over:
+                self.log("Game over: tie." if state.winner is None else f"Game over: Player {state.winner} wins.")
+            self.draw()
+            return
+
+        r, c, val = move
+        row_letter = chr(ord("A") + r)
+        col_num = c + 1
+
+        self.last_bot_move = f"Greedy Bot chose {val:+} at {row_letter}{col_num}"
+        self.log(f"Greedy Bot took {val:+} at {row_letter}{col_num}")
+
+        apply_move(state, r, c)
+        self.draw()
+        self.animate_star_flash(state.star_r, state.star_c)
+
+    def on_cell_click(self, r: int, c: int) -> None:
+        state = self.state
+        if state is None or not self.mode_selected or state.game_over or self.animating:
+            return
+
+        if self.bot_player is not None and state.current_player == self.bot_player:
+            return
+
+        if not is_move_legal(state, r, c):
+            return
+
+        val = state.board[r][c]
+        if val is None:
+            return
+
+        row_letter = chr(ord("A") + r)
+        col_num = c + 1
+        self.log(f"P{state.current_player} took {val:+} at {row_letter}{col_num}")
+
+        apply_move(state, r, c)
+
+        if self.bot_player == BOT_PLAYER_ID:
+            self.last_bot_move = ""
+            if self.label_bot_move:
+                self.label_bot_move.config(text="")
+
+        self.draw()
+        self.animate_star_flash(state.star_r, state.star_c)
 
     # ====================================================================
     # ANIMATION
@@ -641,74 +796,4 @@ class StarGameApp:
 
         btn.config(bg=new_bg, activebackground=new_bg)
         btn._base_bg = new_bg  # type: ignore[attr-defined]
-
         self.root.after(80, lambda: self.animate_star_flash(r, c, steps - 1))
-
-    # ====================================================================
-    # BOT MOVE
-    # ====================================================================
-
-    def bot_move(self) -> None:
-        state = self.state
-        if state is None or state.game_over:
-            self.draw()
-            return
-
-        if self.bot_player is None or state.current_player != self.bot_player:
-            self.draw()
-            return
-
-        move = get_bot_move(state)
-        if move is None:
-            handle_no_moves_if_needed(state)
-            if state.game_over:
-                if state.winner is None:
-                    self.log("Game over: tie.")
-                else:
-                    self.log(f"Game over: Player {state.winner} wins.")
-            self.draw()
-            return
-
-        r, c, val = move
-        row_letter = chr(ord("A") + r)
-        col_num = c + 1
-        self.last_bot_move = f"Greedy Bot chose {val:+} at {row_letter}{col_num}"
-        self.log(f"Greedy Bot took {val:+} at {row_letter}{col_num}")
-
-        apply_move(state, r, c)
-
-        self.draw()
-        self.animate_star_flash(state.star_r, state.star_c)
-
-    # ====================================================================
-    # HUMAN MOVE
-    # ====================================================================
-
-    def on_cell_click(self, r: int, c: int) -> None:
-        state = self.state
-        if state is None or not self.mode_selected or state.game_over or self.animating:
-            return
-
-        if self.bot_player is not None and state.current_player == self.bot_player:
-            return
-
-        if not is_move_legal(state, r, c):
-            return
-
-        val = state.board[r][c]
-        if val is None:
-            return
-
-        row_letter = chr(ord("A") + r)
-        col_num = c + 1
-        self.log(f"P{state.current_player} took {val:+} at {row_letter}{col_num}")
-
-        apply_move(state, r, c)
-
-        # Clear bot message until bot moves again
-        if self.bot_player == BOT_PLAYER_ID:
-            self.last_bot_move = ""
-            self.label_bot_move.config(text="")
-
-        self.draw()
-        self.animate_star_flash(state.star_r, state.star_c)
