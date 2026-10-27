@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "star-and-numbers"
+version = "1.0.0"
+description = "A two-player strategy game on a 9x9 number grid, with a Tkinter GUI."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "omrilidor" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+star-and-numbers = "star_and_numbers.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/omrilidor/star-and-numbers"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,13 +1,19 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
 
 # Virtual envs
 .venv/
 venv/
 env/
+
+# Tools
+.pytest_cache/
 
 # IDEs
 .idea/
@@ -16,6 +22,3 @@ env/
 # OS
 .DS_Store
 Thumbs.db
-
-# Tkinter image cache (if any)
-*.png~
